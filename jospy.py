@@ -13,7 +13,7 @@ import datetime
 from matplotlib import ticker
 
 def find(array,value):
-    idx = (np.abs(array-value)).argmin()
+    idx=(np.abs(array-value)).argmin()
     return idx
 
 def sind(x):
@@ -274,32 +274,16 @@ def delta_dist(mydist,zerodist,distarray,alphadist,length=0):
     """
     if length==0:
         length=len(distarray)
-    if mydist < 0:
-        for ii in range(0,zerodist-1):
-            if distarray[ii] <= mydist:
-                nearest_point=ii
+    nearest_point=find(distarray,mydist)
+    deltadist=distarray[nearest_point]-mydist
+    deltadist_x=cosd(alphadist[nearest_point-1])*deltadist
+    deltadist_y=sind(alphadist[nearest_point-1])*deltadist
 
-        deltadist=distarray[nearest_point]-mydist
-        deltadist_x=cosd(alphadist[nearest_point-1])*deltadist
-        deltadist_y=sind(alphadist[nearest_point-1])*deltadist
-    elif mydist== 0:
-        nearest_point=zerodist
-        deltadist_x=0
-        deltadist_y=0
-    
-    elif mydist> 0:
-        for ii in range(zerodist,length-1):
-            if distarray[ii] <= mydist:
-                nearest_point=ii
-
-        deltadist=distarray[nearest_point]-mydist
-        deltadist_x=cosd(alphadist[nearest_point-1])*deltadist
-        deltadist_y=sind(alphadist[nearest_point-1])*deltadist
     return nearest_point,deltadist_x,deltadist_y
 
 
 
-def perp2coast(X1,X2,Y1,Y2,X0=0,Y0=0,hip=10000,deltahip=1000,units='m'):
+def perp2coast(X1,X2,Y1,Y2,X0=0,Y0=0,hip=10000,deltahip=1000,units='m',side=1):
     """
     INPUT:
     X1: Initial point in X for compute slope
@@ -308,7 +292,7 @@ def perp2coast(X1,X2,Y1,Y2,X0=0,Y0=0,hip=10000,deltahip=1000,units='m'):
     Y2: Final point in Y for compute slope
     X0: Point to colocate the slope in X
     Y0: Point to colocate the slope in Y
-
+    side: If isnt a function, its necesary define a side (-1=left, 1=right).
     OUTPUT:
     
     """
@@ -320,7 +304,9 @@ def perp2coast(X1,X2,Y1,Y2,X0=0,Y0=0,hip=10000,deltahip=1000,units='m'):
     if X0==0 and Y0==0:
         X0=X1
         Y0=Y1
-    
+    if side!=1 and side!=-1:
+        side=1    
+
     if slope==0:
         perp_slope=inf
     else:
@@ -346,19 +332,25 @@ def perp2coast(X1,X2,Y1,Y2,X0=0,Y0=0,hip=10000,deltahip=1000,units='m'):
     while dist_perp <= hip:
         X_slope_vect=dist_perp*cosd(perp_angle)
         Y_slope_vect=dist_perp*sind(perp_angle)
-        
+
         if units=='latlon':
             X_slope_vect,Y_slope_vect=delta_latlon(X_slope_vect,Y_slope_vect,Y0)
 
-        if angle> 0 and slope!=0 :
+        if angle> 0 and slope!=0 and side==1:
             vec_perp_x.append(X0-X_slope_vect)
+        elif angle> 0 and slope!=0 and side==-1:
+            vec_perp_x.append(X0+X_slope_vect)
         else:
             vec_perp_x.append(X0+X_slope_vect)
-        vec_perp_y.append(Y0+Y_slope_vect)
+        if angle> 0 and slope!=0 and side==-1:
+            vec_perp_y.append(Y0-Y_slope_vect)
+        else:
+            vec_perp_y.append(Y0+Y_slope_vect)
         dist_perp=dist_perp+deltahip
+
     return vec_perp_x,vec_perp_y,x_perpslope,y_perpslope,x_normalslope,y_normalslope
 
-def transperpcoast(pos,t,lon,lat,var,parm,U,V,Z,levels,days,zerodist,distarray,alphadist,coastline,hip=10000,deltahip=1000,lon1=[],lat1=[],length=0,cplot=False):
+def transperpcoast(pos,t,lon,lat,var,parm,U,V,Z,levels,days,zerodist,distarray,alphadist,coastline,buf=10,hip=10000,deltahip=1000,lon1=[],lat1=[],length=0,cplot=False):
     """
     
     """
@@ -391,7 +383,7 @@ def transperpcoast(pos,t,lon,lat,var,parm,U,V,Z,levels,days,zerodist,distarray,a
         new_coord_X[ll]=coastline[nearest_point,0]+delta_lon;
         new_coord_Y[ll]=coastline[nearest_point,1]+delta_lat;
 
-        vector_coord_x[ll,:],vector_coord_y[ll,:],x_perpslope[ll],y_perpslope[ll],x_normalslope[ll],y_normalslope[ll]=perp2coast(coastline[nearest_point,0],coastline[nearest_point-1,0],coastline[nearest_point,1],coastline[nearest_point-1,1],new_coord_X[ll],new_coord_Y[ll],hip,deltahip,units='latlon')
+        vector_coord_x[ll,:],vector_coord_y[ll,:],x_perpslope[ll],y_perpslope[ll],x_normalslope[ll],y_normalslope[ll]=perp2coast(coastline[nearest_point+buf,0],coastline[nearest_point-buf-1,0],coastline[nearest_point+buf,1],coastline[nearest_point-buf-1,1],new_coord_X[ll],new_coord_Y[ll],hip,deltahip,units='latlon')
 
         vector_x, vector_y = np.meshgrid(vector_coord_x[ll,:],vector_coord_y[ll,:])
         
@@ -421,7 +413,7 @@ def transperpcoast(pos,t,lon,lat,var,parm,U,V,Z,levels,days,zerodist,distarray,a
             vel_v_coatz_interp[zz,:,:]=v_interp(vector_coord_x[ll,:],vector_coord_y[ll,:])
 
         max_depth=Z_interp.max()
-        for pp in range(0,len(vector_coord_y)):
+        for pp in range(0,len(vector_coord_y[ll,:])):
             for zz in range (0,size[0]):
                 if data_coatz_interp[zz,pp,pp]>=parm and Z_interp[pp,pp]<=max_depth:
                     trans_h=((vel_u_coatz_interp[zz,pp,pp]*x_normalslope[ll])+(y_normalslope[ll]*vel_v_coatz_interp[zz,pp,pp]))*(deltahip)*levels[zz]*data_coatz_interp[zz,pp,pp]
@@ -437,6 +429,55 @@ def transperpcoast(pos,t,lon,lat,var,parm,U,V,Z,levels,days,zerodist,distarray,a
     if cplot==True and t==0:
         plt.show()
     return vector_coord_x,vector_coord_y,x_perpslope,y_perpslope,trans_h_u,trans_h_u_n_p,new_coord_X,new_coord_Y,Z_interp,data_coatz_interp,vel_u_coatz_interp,vel_u_coatz_interp
+
+def timepercoast(pos,t,dt,lon,lat,var,parm,zerodist,coastline,hip=10000,deltahip=1000,cplot=False):
+    """
+    
+    """
+    global timearrive
+    if t==0:
+        timearrive=np.zeros([len(pos),2])
+        
+    vector_coord_x=np.zeros([len(pos),hip/deltahip+1])
+    vector_coord_y=np.zeros([len(pos),hip/deltahip+1])
+    x_perpslope=np.zeros([len(pos)])
+    y_perpslope=np.zeros([len(pos)])
+    x_normalslope=np.zeros([len(pos)])
+    y_normalslope=np.zeros([len(pos)])
+
+    size=var.shape
+
+    for ll in range(0,len(pos)): 
+
+        nearest_point=pos[ll]
+        if nearest_point < zerodist:
+            side=-1
+        else:
+            side=1
+
+        vector_coord_x[ll,:],vector_coord_y[ll,:],x_perpslope[ll],y_perpslope[ll],x_normalslope[ll],y_normalslope[ll]=perp2coast(coastline[nearest_point,0],coastline[nearest_point-1,0],coastline[nearest_point,1],coastline[nearest_point-1,1],hip=hip,deltahip=deltahip,units='latlon',side=side)
+
+        vector_x, vector_y = np.meshgrid(vector_coord_x[ll,:],vector_coord_y[ll,:])
+
+        data_coatz_interp=np.zeros([size[0],len(vector_coord_x[ll,:]),len(vector_coord_y[ll,:])])
+        
+        for zz in range(0,size[0]):
+            data_interp=interp2d(lon, lat, var[zz,:,:], kind='linear')
+            data_coatz_interp[zz,:,:]=data_interp(vector_coord_x[ll,:],vector_coord_y[ll,:])
+        if data_coatz_interp.max()>parm and timearrive[ll,1]==0:
+            timearrive[ll,0]=t*dt
+            timearrive[ll,1]=1
+
+        if cplot==True and t==0:
+            plt.plot(coastline[:,0],coastline[:,1],'-r')
+            plt.plot(vector_coord_x[ll,:],vector_coord_y[ll,:])
+            plt.plot(coastline[nearest_point,0],coastline[nearest_point,1],'om')
+            plt.plot(coastline[nearest_point-1,0],coastline[nearest_point-1,1],'og')
+            plt.gca().set_aspect('equal')
+    if cplot==True and t==0:
+        plt.show()
+    return vector_coord_x,vector_coord_y,x_perpslope,y_perpslope,timearrive,data_coatz_interp
+
 
 def multicore():
     pool = multiprocessing.Pool( 8 )
