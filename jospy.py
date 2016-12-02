@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import matplotlib.colors as colors
 import cmocean
-from scipy.interpolate import griddata
 from scipy.interpolate import interp2d
 import time
 import datetime
@@ -24,6 +22,12 @@ def cosd(x):
 
 def tand(x):
     return np.tan(np.radians(x))
+
+def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=100):
+    new_cmap = colors.LinearSegmentedColormap.from_list(
+        'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
+        cmap(np.linspace(minval, maxval, n)))
+    return new_cmap
 
 def pcolor_cute(X, Y, mask, data, coastline, n=1,cbpos=[], Xb=[], Yb=[], plotname='',namefile='cuteplot',outputfile="./", cmap='', scale='', vmin='', vmax='', mask_value=0,formatfile='png',savefile=True,nbins=''):
     if len(np.shape(X))== 1 and len(np.shape(Y)) == 1:
@@ -63,6 +67,9 @@ def pcolor_cute(X, Y, mask, data, coastline, n=1,cbpos=[], Xb=[], Yb=[], plotnam
         cmap = cmocean.cm.tempo
     elif cmap == 'phase':
         cmap = cmocean.cm.phase
+    elif cmap == 'phasetrunc':
+        cmaptrunc = cmocean.cm.phase
+        cmap=truncate_colormap(cmaptrunc, 0, 0.8)
     elif cmap == 'balance':
         cmap = cmocean.cm.balance
     else:
@@ -350,19 +357,23 @@ def perp2coast(X1,X2,Y1,Y2,X0=0,Y0=0,hip=10000,deltahip=1000,units='m',side=1):
 
     return vec_perp_x,vec_perp_y,x_perpslope,y_perpslope,x_normalslope,y_normalslope
 
-def transperpcoast(pos,t,lon,lat,var,parm,U,V,Z,levels,days,zerodist,distarray,alphadist,coastline,buf=10,hip=10000,deltahip=1000,lon1=[],lat1=[],length=0,cplot=False):
+def transperpcoast(pos,t,lon,lat,var,parm,U,V,Z,drz,days,zerodist,distarray,alphadist,coastline,buf=10,hip=10000,deltahip=1000,lon1=[],lat1=[],length=0,cplot=False,savedata=False):
     """
     
     """
-    global trans_h_u
-    global trans_h_u_n_p
-    if t==0 and days>1:
-        trans_h_u=np.zeros([len(pos),days])
-        trans_h_u_n_p=np.zeros([len(pos),days])
-    elif days == 1:
-        trans_h_u=np.zeros([len(pos)])
-        trans_h_u_n_p=np.zeros([len(pos)])
+#    global trans_h_u
+#    global trans_h_u_n_p
+#    if t==0 and days>1:
+#        trans_h_u=np.zeros([len(pos),days])
+#        trans_h_u_n_p=np.zeros([len(pos),days])
+#    elif days == 1:
+    area=np.zeros([len(pos)])
+    trans_h_u=np.zeros([len(pos)])
+    trans_h_u_n_p=np.zeros([len(pos)])
     
+#    trans_h_u=0
+#    trans_h_u_n_p=0
+
     vector_coord_x=np.zeros([len(pos),hip/deltahip+1])
     vector_coord_y=np.zeros([len(pos),hip/deltahip+1])
     x_perpslope=np.zeros([len(pos)])
@@ -372,21 +383,23 @@ def transperpcoast(pos,t,lon,lat,var,parm,U,V,Z,levels,days,zerodist,distarray,a
     new_coord_X=np.zeros([len(pos)])
     new_coord_Y=np.zeros([len(pos)])
 
-    size=var.shape
+    size=np.asarray(var.shape)
+    size[0]=3
 
     for ll in range(0,len(pos)): 
 
         nearest_point,deltadist_x,deltadist_y = delta_dist(pos[ll],zerodist,distarray,alphadist,length=0)
 
         delta_lon,delta_lat=delta_latlon(deltadist_x,deltadist_y,coastline[nearest_point,1])
-      
+        #print round((distarray[nearest_point]+np.sqrt(deltadist_x**2+deltadist_y**2))/1000,2)
         new_coord_X[ll]=coastline[nearest_point,0]+delta_lon;
         new_coord_Y[ll]=coastline[nearest_point,1]+delta_lat;
 
         vector_coord_x[ll,:],vector_coord_y[ll,:],x_perpslope[ll],y_perpslope[ll],x_normalslope[ll],y_normalslope[ll]=perp2coast(coastline[nearest_point+buf,0],coastline[nearest_point-buf-1,0],coastline[nearest_point+buf,1],coastline[nearest_point-buf-1,1],new_coord_X[ll],new_coord_Y[ll],hip,deltahip,units='latlon')
 
         vector_x, vector_y = np.meshgrid(vector_coord_x[ll,:],vector_coord_y[ll,:])
-        
+        #print str(vector_coord_x[ll,0])+','+str(vector_coord_x[ll,-1])
+        #print str(vector_coord_y[ll,0])+','+str(vector_coord_y[ll,-1])
         Z2interp=interp2d(lon, lat, Z[:,:], kind='linear')
         Z_interp = Z2interp(vector_coord_x[ll,:],vector_coord_y[ll,:])
         
@@ -416,18 +429,35 @@ def transperpcoast(pos,t,lon,lat,var,parm,U,V,Z,levels,days,zerodist,distarray,a
         for pp in range(0,len(vector_coord_y[ll,:])):
             for zz in range (0,size[0]):
                 if data_coatz_interp[zz,pp,pp]>=parm and Z_interp[pp,pp]<=max_depth:
-                    trans_h=((vel_u_coatz_interp[zz,pp,pp]*x_normalslope[ll])+(y_normalslope[ll]*vel_v_coatz_interp[zz,pp,pp]))*(deltahip)*levels[zz]*data_coatz_interp[zz,pp,pp]
-                    trans_h_n_p=((vel_u_coatz_interp[zz,pp,pp]*x_normalslope[ll])+(y_normalslope[ll]*vel_v_coatz_interp[zz,pp,pp]))*(deltahip)*levels[zz]
-                    trans_h_u[ll,t]=(trans_h_u[ll,t]+trans_h)
-                    trans_h_u_n_p[ll,t]=(trans_h_u_n_p[ll,t]+trans_h_n_p) 
+                    trans_h=((vel_u_coatz_interp[zz,pp,pp]*x_normalslope[ll])+(y_normalslope[ll]*vel_v_coatz_interp[zz,pp,pp]))*(deltahip)*drz[zz]*data_coatz_interp[zz,pp,pp]
+                    trans_h_n_p=((vel_u_coatz_interp[zz,pp,pp]*x_normalslope[ll])+(y_normalslope[ll]*vel_v_coatz_interp[zz,pp,pp]))*(deltahip)*drz[zz]
+                    trans_h_u[ll]=(trans_h_u[ll]+trans_h)
+                    trans_h_u_n_p[ll]=(trans_h_u_n_p[ll]+trans_h_n_p) 
+#                    trans_h_u[ll,t]=(trans_h_u[ll,t]+trans_h)
+#                    trans_h_u_n_p[ll,t]=(trans_h_u_n_p[ll,t]+trans_h_n_p) 
+                #if vel_u_coatz_interp[zz,pp,pp]!=0 and data_coatz_interp[zz,pp,pp]>=parm:
+                #    area[ll]=area[ll]+(deltahip)*drz[zz]
         if cplot==True and t==0:
             plt.plot(coastline[:,0],coastline[:,1],'-r')
             plt.plot(vector_coord_x[ll,:],vector_coord_y[ll,:])
             plt.plot(coastline[nearest_point,0],coastline[nearest_point,1],'om')
             plt.plot(coastline[nearest_point-1,0],coastline[nearest_point-1,1],'og')
             plt.gca().set_aspect('equal')
+        if savedata==True:
+            with file('../output_data_analized/data_interp/vel_u_section_'+str(pos[ll])+'_'+str(t)+'.dat', 'w') as variable_file:
+                np.savetxt(variable_file, vel_u_coatz_interp[:,np.arange(0,np.shape(vel_u_coatz_interp)[1]),np.arange(0,np.shape(vel_u_coatz_interp)[1])])
+            variable_file.close() 
+            with file('../output_data_analized/data_interp/vel_v_section_'+str(pos[ll])+'_'+str(t)+'.dat', 'w') as variable_file:
+                np.savetxt(variable_file, vel_v_coatz_interp[:,np.arange(0,np.shape(vel_u_coatz_interp)[1]),np.arange(0,np.shape(vel_u_coatz_interp)[1])])
+            variable_file.close() 
+        #Plot perp section
+        #data_masked=np.ma.masked_where(np.sqrt(vel_v_coatz_interp[0:30,range(0,26),range(0,26)]**2+vel_u_coatz_interp[0:30,range(0,26),range(0,26)]**2)==0, np.sqrt(vel_v_coatz_interp[0:30,range(0,26),range(0,26)]**2+vel_u_coatz_interp[0:30,range(0,26),range(0,26)]**2))
+        #plt.pcolor(np.arange(0,51000,2000),-np.cumsum(drz)[0:30],data_masked)
+        #plt.savefig("../output_figures/section_transport/mag_vel_"+str(pos[ll])+".png",format='png',dpi=400)
+        #plt.clf()
     if cplot==True and t==0:
         plt.show()
+    #print area/1000000
     return vector_coord_x,vector_coord_y,x_perpslope,y_perpslope,trans_h_u,trans_h_u_n_p,new_coord_X,new_coord_Y,Z_interp,data_coatz_interp,vel_u_coatz_interp,vel_u_coatz_interp
 
 def timepercoast(pos,t,dt,lon,lat,var,parm,zerodist,coastline,hip=10000,deltahip=1000,cplot=False):
